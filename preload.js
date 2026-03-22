@@ -62,4 +62,8 @@ contextBridge.exposeInMainWorld('api', {
   // Export / Import
   exportDocument: (opts) => ipcRenderer.invoke('export-document', opts),
   importDocument: (opts) => ipcRenderer.invoke('import-document', opts),
+
+  // Improvement Lab
+  saveLabState: (data) => ipcRenderer.invoke('save-lab-state', data),
+  loadLabState: () => ipcRenderer.invoke('load-lab-state'),
 });

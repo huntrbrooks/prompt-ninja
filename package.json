@@ -45,7 +45,8 @@
     "files": [
       "main.js",
       "preload.js",
-      "renderer/**/*"
+      "renderer/**/*",
+      "!renderer/preview-stub.js"
     ],
     "directories": {
       "output": "dist"

@@ -236,6 +236,31 @@ Output only the system prompt — no explanation, no wrapper text.`;
 
 const PULL_INTERVIEW_PREAMBLE = `Before you begin working on this task, ask me all the questions you need to do it well. Ask ONE question at a time. Be specific about what you need to know. Once you have enough information, say exactly "I have what I need — generating now." and then produce the final output immediately.`;
 
+// ─── Improvement Lab — Generate Prompt Template ─────────────────────────────
+
+const LAB_GENERATE_PROMPT = `You are an expert prompt engineer. The user will describe a task they want to accomplish with an AI assistant. Your job is to generate a complete, well-structured prompt template that they can use.
+
+Here is the user's task description:
+<task>
+{{TASK}}
+</task>
+
+{{THINKING_NOTE}}
+
+Generate a comprehensive prompt that:
+1. Assigns a clear, relevant role to the AI
+2. Provides detailed instructions broken into logical steps
+3. Specifies the expected output format
+4. Includes relevant constraints and guidelines
+5. Uses XML tags or markdown structure where appropriate
+6. Adds placeholder variables in {{DOUBLE_BRACES}} for parts the user will fill in
+7. Includes a <scratchpad> section for the AI to think through its approach before responding
+8. Includes examples if they would help clarify the expected output
+
+Output ONLY the generated prompt — no explanations, no commentary, no wrapper text.
+Do NOT wrap the output in code blocks or quotes.
+The prompt should be ready to copy and use immediately.`;
+
 // ─── Simple Persistent Store ────────────────────────────────────────────────
 
 class Store {
@@ -498,10 +523,10 @@ function showSettingsWindow() {
     minHeight: 600,
     resizable: true,
     minimizable: true,
-    maximizable: false,
-    fullscreenable: false,
+    maximizable: true,
+    fullscreenable: true,
     titleBarStyle: 'hiddenInset',
-    backgroundColor: '#0f0f10',
+    backgroundColor: '#F8F9FA',
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -1270,6 +1295,26 @@ ipcMain.on('stream-request', async (event, { reqId, type, input }) => {
     // input = messages[] — full context with all Q&A answers collected
     messages = input;
 
+  // ── Improvement Lab ────────────────────────────────────────────────────
+  } else if (type === 'lab-generate') {
+    // input = { task: string, thinking: boolean }
+    const thinkingNote = input.thinking
+      ? 'This prompt will be used with models that have thinking/chain-of-thought enabled. Include a <scratchpad> section for structured reasoning.'
+      : '';
+    messages = [
+      { role: 'user', content: LAB_GENERATE_PROMPT.replace('{{TASK}}', input.task).replace('{{THINKING_NOTE}}', thinkingNote) },
+    ];
+
+  } else if (type === 'lab-evaluate') {
+    // input = { systemPrompt: string, messages: [{role, content}] }
+    messages = [];
+    if (input.systemPrompt) {
+      messages.push({ role: 'system', content: input.systemPrompt });
+    }
+    for (const m of input.messages) {
+      messages.push({ role: m.role, content: m.content });
+    }
+
   } else {
     event.sender.send('stream-error', { reqId, message: `Unknown stream type: ${type}` });
     return;
@@ -1459,5 +1504,29 @@ ipcMain.handle('import-document', (_event, { content, type }) => {
   } catch (err) {
     logError('[IPC] import-document ERROR:', err.message);
     throw new Error('Import failed: ' + err.message);
+  }
+});
+
+// ─── Improvement Lab Persistence ────────────────────────────────────────────
+
+ipcMain.handle('save-lab-state', (_event, data) => {
+  const filePath = path.join(app.getPath('userData'), 'lab-state.json');
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+    log('[IPC] save-lab-state');
+    return { ok: true };
+  } catch (err) {
+    logError('[IPC] save-lab-state ERROR:', err.message);
+    throw new Error('Save failed: ' + err.message);
+  }
+});
+
+ipcMain.handle('load-lab-state', () => {
+  const filePath = path.join(app.getPath('userData'), 'lab-state.json');
+  try {
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
   }
 });

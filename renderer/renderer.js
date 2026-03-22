@@ -120,6 +120,23 @@ function updateModelBadge(modelId, provider) {
   const parts = modelId.split('/');
   modelBadgeName.textContent = parts.length > 1 ? parts[1] : modelId;
   modelBadgeProvider.textContent = provider ? `via ${provider}` : parts[0];
+
+  // Sync settings tab model badge
+  const sName = $('settingsModelName');
+  const sProv = $('settingsModelProvider');
+  if (sName) {
+    sName.textContent = parts.length > 1 ? parts[1] : modelId;
+    sProv.textContent = provider ? `via ${provider}` : parts[0];
+  }
+}
+
+// Settings model badge opens the model picker
+const settingsModelBadge = $('settingsModelBadge');
+if (settingsModelBadge) {
+  settingsModelBadge.addEventListener('click', () => {
+    modelModal.classList.remove('hidden');
+    modelSearch.focus();
+  });
 }
 
 // ─── Tab navigation ───────────────────────────────────────────────────────────
@@ -801,6 +818,7 @@ const ctxPickerSelect = $('ctxPickerSelect');
 
 let ctxPickerMode       = 'master'; // 'master' | 'system'
 let ctxPickerSelectedId = null;
+let ctxPickerLabImport  = false; // true when picker is used to import into Improvement Lab
 
 async function openCtxPicker(mode) {
   ctxPickerMode = mode;
@@ -843,8 +861,8 @@ async function openCtxPicker(mode) {
   }
 }
 
-ctxPickerClose.addEventListener('click', () => ctxPickerModal.classList.add('hidden'));
-ctxPickerModal.addEventListener('click', (e) => { if (e.target === ctxPickerModal) ctxPickerModal.classList.add('hidden'); });
+ctxPickerClose.addEventListener('click', () => { ctxPickerLabImport = false; ctxPickerModal.classList.add('hidden'); });
+ctxPickerModal.addEventListener('click', (e) => { if (e.target === ctxPickerModal) { ctxPickerLabImport = false; ctxPickerModal.classList.add('hidden'); } });
 
 ctxPickerClear.addEventListener('click', async () => {
   if (ctxPickerMode === 'master') {
@@ -861,6 +879,7 @@ ctxPickerClear.addEventListener('click', async () => {
 
 ctxPickerSelect.addEventListener('click', async () => {
   if (!ctxPickerSelectedId) return;
+  if (ctxPickerLabImport) return; // handled by lab import listener
   if (ctxPickerMode === 'master') {
     const items = await api.listMasterPrompts();
     activeContextRecord = items.find(i => i.id === ctxPickerSelectedId) || null;
@@ -1907,3 +1926,506 @@ document.querySelector('.tab[data-tab="prompts"]').addEventListener('click', () 
 });
 
 init();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// IMPROVEMENT LAB
+// ═══════════════════════════════════════════════════════════════════════════
+
+(function initImprovementLab() {
+  // ─── DOM refs ──────────────────────────────────────────────────────────
+  const labTitle         = $('labTitle');
+  const labSavedInfo     = $('labSavedInfo');
+  const labSaveBtn       = $('labSaveBtn');
+  const labModelBadge    = $('labModelBadge');
+  const labModelNameEl   = $('labModelName');
+  const labSystemPrompt  = $('labSystemPrompt');
+  const labImportSysPrompt = $('labImportSysPrompt');
+  const labSysCollapse   = $('labSysCollapse');
+  const labSysBody       = $('labSysBody');
+  const labMessagesEl    = $('labMessages');
+  const labAddPair       = $('labAddPair');
+  const labTemplatize    = $('labTemplatize');
+  const labVariablesPanel = $('labVariablesPanel');
+  const labVariablesList = $('labVariablesList');
+  const labPromptPanel   = $('labPromptPanel');
+  const labEvaluatePanel = $('labEvaluatePanel');
+  const labRunBtn        = $('labRunBtn');
+  const labStopEval      = $('labStopEval');
+  const labEvalOutput    = $('labEvalOutput');
+  const labEvalMeta      = $('labEvalMeta');
+  const labEvalTokens    = $('labEvalTokens');
+
+  // Modals
+  const labGenerateModal     = $('labGenerateModal');
+  const labGenerateModalClose = $('labGenerateModalClose');
+  const labGenTaskInput      = $('labGenTaskInput');
+  const labGenCancelBtn      = $('labGenCancelBtn');
+  const labGenViewBtn        = $('labGenViewBtn');
+  const labThinkingCheck     = $('labThinkingCheck');
+  const labPreviewModal      = $('labPreviewModal');
+  const labPreviewModalClose = $('labPreviewModalClose');
+  const labPreviewOutput     = $('labPreviewOutput');
+  const labPreviewVarTags    = $('labPreviewVarTags');
+  const labPreviewBackBtn    = $('labPreviewBackBtn');
+  const labPreviewContinueBtn = $('labPreviewContinueBtn');
+
+  // ─── State ─────────────────────────────────────────────────────────────
+  let labState = {
+    title: 'Untitled',
+    systemPrompt: '',
+    messages: [{ role: 'user', content: '', label: 'User' }],
+    variables: [],
+    mode: 'prompt',         // 'prompt' | 'evaluate'
+    templatize: false,
+    savedAt: null,
+  };
+
+  let labEvalReqId = null;
+  let labEvalFull  = '';
+  let labGenReqId  = null;
+  let labGenFull   = '';
+  let labTargetMsgIndex = 0;  // which message row triggered Generate Prompt
+
+  // ─── Helpers ───────────────────────────────────────────────────────────
+
+  function labExtractVariables(text) {
+    const matches = text.match(/\{\{([A-Z_][A-Z0-9_]*)\}\}/g);
+    if (!matches) return [];
+    return [...new Set(matches.map(m => m.slice(2, -2)))];
+  }
+
+  function labUpdateVariables() {
+    const allText = labState.systemPrompt + ' ' + labState.messages.map(m => m.content).join(' ');
+    labState.variables = labExtractVariables(allText);
+    renderLabVariables();
+  }
+
+  function renderLabVariables() {
+    if (!labState.templatize || labState.variables.length === 0) {
+      labVariablesList.innerHTML = '<span class="lab-variables-empty">Enable Templatize and use {{VARIABLE_NAME}} syntax in your messages.</span>';
+      return;
+    }
+    labVariablesList.innerHTML = labState.variables.map(v =>
+      `<span class="lab-var-chip" data-var="${v}" title="Click to rename">{{${v}}}</span>`
+    ).join('');
+
+    labVariablesList.querySelectorAll('.lab-var-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const oldName = chip.dataset.var;
+        const newName = prompt(`Rename variable "${oldName}" to:`, oldName);
+        if (!newName || newName === oldName || !/^[A-Z_][A-Z0-9_]*$/.test(newName)) return;
+        // Replace in all messages and system prompt
+        const pattern = new RegExp(`\\{\\{${oldName}\\}\\}`, 'g');
+        labState.systemPrompt = labState.systemPrompt.replace(pattern, `{{${newName}}}`);
+        labState.messages.forEach(m => {
+          m.content = m.content.replace(pattern, `{{${newName}}}`);
+        });
+        labSystemPrompt.value = labState.systemPrompt;
+        renderLabMessages();
+        labUpdateVariables();
+      });
+    });
+  }
+
+  // ─── Render Messages ───────────────────────────────────────────────────
+
+  function renderLabMessages() {
+    labMessagesEl.innerHTML = '';
+    labState.messages.forEach((msg, i) => {
+      const row = document.createElement('div');
+      row.className = 'lab-msg-row';
+      row.dataset.index = i;
+
+      const isUser = msg.role === 'user';
+      const label = msg.label || (isUser ? 'User' : 'Assistant');
+
+      let headerHTML = `
+        <div class="lab-msg-header">
+          <span class="lab-msg-label" data-role="${msg.role}">${label}</span>
+          <button class="lab-rename-btn" title="Rename role">&#9998;</button>`;
+
+      if (isUser) {
+        headerHTML += `<button class="btn btn-ghost btn-sm lab-generate-prompt-btn">Generate Prompt</button>`;
+      }
+
+      // Allow removing pairs (but keep at least the first user message)
+      if (i > 0) {
+        headerHTML += `<button class="lab-msg-remove" title="Remove">&#10005;</button>`;
+      }
+
+      headerHTML += `</div>`;
+
+      row.innerHTML = headerHTML +
+        `<textarea class="workshop-textarea lab-msg-input" rows="4" placeholder="${isUser ? 'Type your message or instructions...' : 'Assistant response will appear here after evaluation...'}" data-role="${msg.role}">${msg.content}</textarea>`;
+
+      labMessagesEl.appendChild(row);
+
+      // Event: textarea input
+      const textarea = row.querySelector('.lab-msg-input');
+      textarea.addEventListener('input', () => {
+        labState.messages[i].content = textarea.value;
+        if (labState.templatize) labUpdateVariables();
+      });
+
+      // Event: rename label
+      row.querySelector('.lab-rename-btn').addEventListener('click', () => {
+        const newLabel = prompt(`Rename "${label}" to:`, label);
+        if (newLabel && newLabel.trim()) {
+          labState.messages[i].label = newLabel.trim();
+          renderLabMessages();
+        }
+      });
+
+      // Event: Generate Prompt (only on user rows)
+      const genBtn = row.querySelector('.lab-generate-prompt-btn');
+      if (genBtn) {
+        genBtn.addEventListener('click', () => {
+          labTargetMsgIndex = i;
+          labGenerateModal.classList.remove('hidden');
+        });
+      }
+
+      // Event: remove message
+      const removeBtn = row.querySelector('.lab-msg-remove');
+      if (removeBtn) {
+        removeBtn.addEventListener('click', () => {
+          labState.messages.splice(i, 1);
+          renderLabMessages();
+          labUpdateVariables();
+        });
+      }
+    });
+  }
+
+  // ─── Mode Toggle (Prompt / Evaluate) ───────────────────────────────────
+
+  document.querySelectorAll('.lab-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.lab-mode-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      labState.mode = btn.dataset.labmode;
+
+      if (labState.mode === 'evaluate') {
+        labEvaluatePanel.classList.remove('hidden');
+      } else {
+        labEvaluatePanel.classList.add('hidden');
+      }
+    });
+  });
+
+  // ─── System Prompt Collapse ────────────────────────────────────────────
+
+  labSysCollapse.addEventListener('click', () => {
+    labSysBody.classList.toggle('collapsed');
+    labSysCollapse.classList.toggle('collapsed');
+  });
+
+  labSystemPrompt.addEventListener('input', () => {
+    labState.systemPrompt = labSystemPrompt.value;
+    if (labState.templatize) labUpdateVariables();
+  });
+
+  // ─── Import System Prompt into Lab ──────────────────────────────────
+  // Reuses the context picker modal, but on select loads the prompt
+  // content directly into the lab system prompt textarea.
+
+  labImportSysPrompt.addEventListener('click', async () => {
+    ctxPickerLabImport = true;
+    ctxPickerMode = 'system';
+    ctxPickerSelectedId = null;
+    ctxPickerSelect.disabled = true;
+    ctxPickerTitle.textContent = 'Import System Prompt';
+    ctxPickerList.innerHTML = '<div class="ps-empty">Loading...</div>';
+    ctxPickerModal.classList.remove('hidden');
+
+    try {
+      const items = await api.listSystemPrompts();
+      ctxPickerList.innerHTML = '';
+      if (items.length === 0) {
+        ctxPickerList.innerHTML = '<div class="ps-empty">No system prompts saved yet. Create one in Prompts & Systems.</div>';
+        return;
+      }
+      items.forEach(item => {
+        const el = document.createElement('div');
+        el.className = 'ctx-picker-item';
+        el.dataset.id = item.id;
+        const updated = item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '';
+        el.innerHTML = `
+          <div style="flex:1;min-width:0;">
+            <div class="ctx-picker-item-name">${escHtml(item.name)}</div>
+            <div class="ctx-picker-item-meta">${escHtml(item.category || '')}${updated ? ' \u00b7 ' + updated : ''}</div>
+          </div>`;
+        el.addEventListener('click', () => {
+          document.querySelectorAll('.ctx-picker-item').forEach(r => r.classList.remove('selected'));
+          el.classList.add('selected');
+          ctxPickerSelectedId = item.id;
+          ctxPickerSelect.disabled = false;
+        });
+        ctxPickerList.appendChild(el);
+      });
+    } catch (err) {
+      ctxPickerList.innerHTML = `<div class="ps-empty" style="color:var(--color-error)">${escHtml(err.message)}</div>`;
+    }
+  });
+
+  // Intercept the picker "Load" button when in lab import mode
+  ctxPickerSelect.addEventListener('click', async () => {
+    if (!ctxPickerLabImport || !ctxPickerSelectedId) return;
+    ctxPickerLabImport = false;
+
+    const items = await api.listSystemPrompts();
+    const selected = items.find(i => i.id === ctxPickerSelectedId);
+    if (selected && selected.content) {
+      // Expand the system prompt section if collapsed
+      labSysBody.classList.remove('collapsed');
+      labSysCollapse.classList.remove('collapsed');
+
+      labSystemPrompt.value = selected.content;
+      labState.systemPrompt = selected.content;
+      if (labState.templatize) labUpdateVariables();
+      showToast(`Imported: ${selected.name}`, 'success', 2000);
+    }
+    ctxPickerModal.classList.add('hidden');
+  });
+
+  // ─── Templatize Toggle ─────────────────────────────────────────────────
+
+  labTemplatize.addEventListener('change', () => {
+    labState.templatize = labTemplatize.checked;
+    labVariablesPanel.classList.toggle('hidden', !labState.templatize);
+    if (labState.templatize) labUpdateVariables();
+  });
+
+  // ─── Add Message Pair ──────────────────────────────────────────────────
+
+  labAddPair.addEventListener('click', () => {
+    labState.messages.push(
+      { role: 'assistant', content: '', label: 'Assistant' },
+      { role: 'user', content: '', label: 'User' }
+    );
+    renderLabMessages();
+  });
+
+  // ─── Model Badge ──────────────────────────────────────────────────────
+
+  function labUpdateModelBadge() {
+    const parts = (activeModel || '').split('/');
+    labModelNameEl.textContent = parts.length > 1 ? parts[1] : (activeModel || 'No model');
+  }
+
+  labModelBadge.addEventListener('click', () => {
+    // Reuse the existing model picker modal
+    modelModal.classList.remove('hidden');
+    modelSearch.focus();
+  });
+
+  // Keep lab badge in sync when model changes
+  const origUpdateModelBadge = window.updateModelBadge || updateModelBadge;
+  // Monkey-patch to also update lab badge (the function is already defined above)
+  const _origSetActiveModel = api.setActiveModel;
+  // Instead, just observe via a MutationObserver on the main badge
+  const labBadgeObserver = new MutationObserver(() => labUpdateModelBadge());
+  labBadgeObserver.observe(modelBadgeName, { childList: true, characterData: true, subtree: true });
+
+  // ─── Save / Load ──────────────────────────────────────────────────────
+
+  labSaveBtn.addEventListener('click', async () => {
+    labState.title = labTitle.value || 'Untitled';
+    labState.savedAt = Date.now();
+    try {
+      await api.saveLabState(labState);
+      labSavedInfo.textContent = 'Saved ' + new Date(labState.savedAt).toLocaleTimeString();
+      showToast('Lab state saved', 'success');
+    } catch (err) {
+      showToast('Save failed: ' + err.message, 'error');
+    }
+  });
+
+  async function labLoad() {
+    try {
+      const saved = await api.loadLabState();
+      if (saved) {
+        labState = { ...labState, ...saved };
+        labTitle.value = labState.title || 'Untitled';
+        labSystemPrompt.value = labState.systemPrompt || '';
+        labTemplatize.checked = !!labState.templatize;
+        labVariablesPanel.classList.toggle('hidden', !labState.templatize);
+        if (labState.savedAt) {
+          labSavedInfo.textContent = 'Saved ' + new Date(labState.savedAt).toLocaleTimeString();
+        }
+        renderLabMessages();
+        if (labState.templatize) labUpdateVariables();
+      }
+    } catch { /* no saved state */ }
+  }
+
+  // ─── Generate Prompt Modal ─────────────────────────────────────────────
+
+  // Quick task chips
+  document.querySelectorAll('.lab-quick-task').forEach(chip => {
+    chip.addEventListener('click', () => {
+      labGenTaskInput.value = chip.dataset.task;
+    });
+  });
+
+  function closeLabGenModal() {
+    labGenerateModal.classList.add('hidden');
+    labGenTaskInput.value = '';
+  }
+
+  labGenerateModalClose.addEventListener('click', closeLabGenModal);
+  labGenCancelBtn.addEventListener('click', closeLabGenModal);
+
+  labGenViewBtn.addEventListener('click', () => {
+    const task = labGenTaskInput.value.trim();
+    if (!task) { showToast('Describe a task first', 'warning'); return; }
+
+    // Show loading state
+    labGenViewBtn.disabled = true;
+    labGenViewBtn.innerHTML = '<span class="lab-spinner"></span>Generating...';
+
+    // Open preview modal, close generate modal
+    labGenerateModal.classList.add('hidden');
+    labPreviewModal.classList.remove('hidden');
+    labPreviewOutput.innerHTML = '<span class="cursor"></span>';
+    labPreviewVarTags.innerHTML = '';
+    labGenFull = '';
+
+    // Start streaming
+    labGenReqId = genReqId();
+    api.streamRequest(labGenReqId, 'lab-generate', {
+      task,
+      thinking: labThinkingCheck.checked,
+    });
+  });
+
+  // ─── Your Prompt Preview Modal ─────────────────────────────────────────
+
+  labPreviewModalClose.addEventListener('click', () => {
+    labPreviewModal.classList.add('hidden');
+    labGenViewBtn.disabled = false;
+    labGenViewBtn.textContent = 'View Prompt';
+    if (labGenReqId) { api.streamAbort(); labGenReqId = null; }
+  });
+
+  labPreviewBackBtn.addEventListener('click', () => {
+    labPreviewModal.classList.add('hidden');
+    labGenerateModal.classList.remove('hidden');
+    labGenViewBtn.disabled = false;
+    labGenViewBtn.textContent = 'View Prompt';
+    if (labGenReqId) { api.streamAbort(); labGenReqId = null; }
+  });
+
+  labPreviewContinueBtn.addEventListener('click', () => {
+    // Insert generated prompt into the target user message
+    if (labGenFull && labState.messages[labTargetMsgIndex]) {
+      labState.messages[labTargetMsgIndex].content = labGenFull;
+      renderLabMessages();
+      if (labState.templatize) labUpdateVariables();
+    }
+    labPreviewModal.classList.add('hidden');
+    labGenViewBtn.disabled = false;
+    labGenViewBtn.textContent = 'View Prompt';
+    labGenReqId = null;
+    showToast('Prompt inserted', 'success');
+  });
+
+  // ─── Evaluate Mode ────────────────────────────────────────────────────
+
+  labRunBtn.addEventListener('click', () => {
+    // Collect messages that have content
+    const msgs = labState.messages.filter(m => m.content.trim());
+    if (msgs.length === 0) { showToast('Add at least one message', 'warning'); return; }
+
+    labEvalFull = '';
+    labEvalOutput.innerHTML = '<span class="cursor"></span>';
+    labEvalMeta.classList.add('hidden');
+    labStopEval.classList.remove('hidden');
+    labRunBtn.disabled = true;
+
+    labEvalReqId = genReqId();
+    api.streamRequest(labEvalReqId, 'lab-evaluate', {
+      systemPrompt: labState.systemPrompt,
+      messages: msgs.map(m => ({ role: m.role, content: m.content })),
+    });
+  });
+
+  labStopEval.addEventListener('click', () => {
+    api.streamAbort();
+    labStopEval.classList.add('hidden');
+    labRunBtn.disabled = false;
+  });
+
+  // ─── Stream Handlers (shared with existing system) ─────────────────────
+
+  api.onStreamChunk((data) => {
+    // Handle lab-generate chunks
+    if (data.reqId === labGenReqId) {
+      labGenFull += data.chunk;
+      labPreviewOutput.innerHTML = labGenFull.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+      // Update preview variables
+      const vars = labExtractVariables(labGenFull);
+      labPreviewVarTags.innerHTML = vars.map(v =>
+        `<span class="lab-var-chip" data-var="${v}">{{${v}}}</span>`
+      ).join('');
+    }
+
+    // Handle lab-evaluate chunks
+    if (data.reqId === labEvalReqId) {
+      labEvalFull += data.chunk;
+      labEvalOutput.textContent = labEvalFull;
+      labEvalOutput.scrollTop = labEvalOutput.scrollHeight;
+    }
+  });
+
+  api.onStreamDone((data) => {
+    if (data.reqId === labGenReqId) {
+      labGenReqId = null;
+      labGenViewBtn.disabled = false;
+      labGenViewBtn.textContent = 'View Prompt';
+    }
+    if (data.reqId === labEvalReqId) {
+      labEvalReqId = null;
+      labStopEval.classList.add('hidden');
+      labRunBtn.disabled = false;
+
+      // Show token count if we can estimate
+      const chars = labEvalFull.length;
+      const approxTokens = Math.round(chars / 4);
+      labEvalTokens.textContent = `~${approxTokens} tokens (${chars} chars)`;
+      labEvalMeta.classList.remove('hidden');
+    }
+  });
+
+  api.onStreamError((data) => {
+    if (data.reqId === labGenReqId) {
+      labGenReqId = null;
+      labGenViewBtn.disabled = false;
+      labGenViewBtn.textContent = 'View Prompt';
+      labPreviewOutput.innerHTML = `<span style="color:var(--error)">Error: ${data.message}</span>`;
+    }
+    if (data.reqId === labEvalReqId) {
+      labEvalReqId = null;
+      labStopEval.classList.add('hidden');
+      labRunBtn.disabled = false;
+      labEvalOutput.innerHTML = `<span style="color:var(--error)">Error: ${data.message}</span>`;
+    }
+  });
+
+  // ─── Initialize ───────────────────────────────────────────────────────
+
+  renderLabMessages();
+  labUpdateModelBadge();
+
+  // Lazy-load saved state when lab tab is first clicked
+  let labLoaded = false;
+  document.querySelector('.tab[data-tab="lab"]').addEventListener('click', () => {
+    if (!labLoaded) {
+      labLoaded = true;
+      labLoad();
+      labUpdateModelBadge();
+    }
+  });
+
+})();

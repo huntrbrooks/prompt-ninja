@@ -4,6 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com;">
+  <!-- Dark mode: auto-detect system preference -->
+  <script>
+    /* Auto dark mode from system preference; toggle via document.body.classList.toggle('dark') */
+    if(window.matchMedia('(prefers-color-scheme:dark)').matches){
+      document.addEventListener('DOMContentLoaded',function(){document.body.classList.add('dark');});
+    }
+  </script>
   <title>PromptPlus</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -19,6 +26,7 @@
     <!-- Tab Bar -->
     <nav class="tab-bar">
       <button class="tab active" data-tab="workshop">Workshop</button>
+      <button class="tab" data-tab="lab">Improvement Lab</button>
       <button class="tab" data-tab="prompts">Prompts &amp; Systems</button>
       <button class="tab" data-tab="settings">Settings</button>
     </nav>
@@ -137,6 +145,95 @@
 
     </main>
 
+    <!-- ═══ Improvement Lab Tab ══════════════════════════════════════════════ -->
+    <main class="content tab-content" id="tab-lab">
+
+      <!-- Lab Header -->
+      <div class="lab-header">
+        <div class="lab-header-left">
+          <input type="text" id="labTitle" class="lab-title-input" value="Untitled" spellcheck="false">
+          <span class="lab-saved-info" id="labSavedInfo">Not saved yet</span>
+          <button class="btn btn-ghost btn-sm" id="labSaveBtn">Save changes</button>
+        </div>
+        <div class="lab-header-right">
+          <div class="lab-model-badge" id="labModelBadge" title="Click to change model">
+            <span class="model-badge-dot"></span>
+            <span class="lab-model-name" id="labModelName">Loading...</span>
+            <span class="model-badge-arrow">&#8964;</span>
+          </div>
+          <div class="lab-mode-toggle">
+            <button class="lab-mode-btn active" data-labmode="prompt">Prompt</button>
+            <button class="lab-mode-btn" data-labmode="evaluate">Evaluate</button>
+          </div>
+          <label class="lab-toggle-label">
+            <input type="checkbox" id="labTemplatize">
+            <span>Templatize</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- System Prompt (collapsible) -->
+      <div class="lab-section">
+        <div class="lab-section-header" id="labSysHeader">
+          <span class="lab-section-title">
+            System Prompt
+            <span class="lab-info-icon" title="A system prompt sets the AI's role, tone and context before the conversation begins. It's sent with every request but hidden from the user message flow.">&#9432;</span>
+          </span>
+          <div class="lab-section-actions">
+            <button class="btn btn-ghost btn-sm" id="labImportSysPrompt" title="Import a saved system prompt">Import</button>
+            <button class="lab-collapse-btn" id="labSysCollapse" title="Collapse">&#9660;</button>
+          </div>
+        </div>
+        <div class="lab-sys-body" id="labSysBody">
+          <textarea id="labSystemPrompt" class="workshop-textarea" rows="3" placeholder="Define a role, tone or context (optional)"></textarea>
+        </div>
+      </div>
+
+      <!-- Messages Panel (Prompt mode) -->
+      <div class="lab-panel" id="labPromptPanel">
+        <div id="labMessages">
+          <!-- First message row -->
+          <div class="lab-msg-row" data-index="0">
+            <div class="lab-msg-header">
+              <span class="lab-msg-label" data-role="user">User</span>
+              <button class="lab-rename-btn" title="Rename role">&#9998;</button>
+              <button class="btn btn-ghost btn-sm lab-generate-prompt-btn">Generate Prompt</button>
+            </div>
+            <textarea class="workshop-textarea lab-msg-input" rows="4" placeholder="Type your message or instructions..." data-role="user"></textarea>
+          </div>
+        </div>
+        <button class="btn btn-ghost btn-sm lab-add-pair-btn" id="labAddPair">+ Add message pair</button>
+      </div>
+
+      <!-- Variables Panel (shown when Templatize is on) -->
+      <div class="lab-variables-panel hidden" id="labVariablesPanel">
+        <div class="lab-section-header">
+          <span class="lab-section-title">Variables</span>
+        </div>
+        <div class="lab-variables-list" id="labVariablesList">
+          <span class="lab-variables-empty">Enable Templatize and use {{VARIABLE_NAME}} syntax in your messages.</span>
+        </div>
+      </div>
+
+      <!-- Evaluate Panel (shown in Evaluate mode) -->
+      <div class="lab-evaluate-panel hidden" id="labEvaluatePanel">
+        <div class="lab-section-header">
+          <span class="lab-section-title">Evaluation Results</span>
+          <div class="lab-eval-actions">
+            <button class="btn btn-ghost btn-sm hidden" id="labStopEval">&#9632; Stop</button>
+            <button class="btn btn-primary btn-sm" id="labRunBtn">&#9654; Run</button>
+          </div>
+        </div>
+        <div class="lab-eval-output" id="labEvalOutput">
+          <span class="lab-eval-placeholder">Click Run to send your prompt to the selected model.</span>
+        </div>
+        <div class="lab-eval-meta hidden" id="labEvalMeta">
+          <span class="lab-eval-tokens" id="labEvalTokens"></span>
+        </div>
+      </div>
+
+    </main>
+
     <!-- ═══ Prompts & Systems Tab ══════════════════════════════════════════ -->
     <main class="content tab-content" id="tab-prompts">
 
@@ -202,6 +299,24 @@
             <button id="loadApi" class="btn btn-primary full-width">Connect &amp; Load Models</button>
           </div>
           <div id="apiStatus" class="api-status hidden"></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-header"><span class="section-title">Model</span></div>
+        <div class="card">
+          <div class="form-group">
+            <label>Active Model</label>
+            <div class="row">
+              <div class="model-badge settings-model-badge" id="settingsModelBadge" title="Click to change model">
+                <span class="model-badge-dot"></span>
+                <span class="model-badge-name" id="settingsModelName">Loading...</span>
+                <span class="model-badge-provider" id="settingsModelProvider"></span>
+                <span class="model-badge-arrow">&#8964;</span>
+              </div>
+            </div>
+            <p class="hint">Used for Enhance hotkey, Workshop, and Improvement Lab.</p>
+          </div>
         </div>
       </section>
 
@@ -518,6 +633,57 @@
       <div class="modal-footer">
         <button id="confirmModalCancel" class="btn btn-ghost btn-sm">Cancel</button>
         <button id="confirmModalOk" class="btn btn-primary" style="background: var(--error);">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- Improvement Lab — Generate Prompt Modal                                 -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="modal-overlay hidden" id="labGenerateModal">
+    <div class="modal" style="max-width: 520px;">
+      <div class="modal-header">
+        <h2 class="modal-title">Generate a prompt</h2>
+        <button class="modal-close" id="labGenerateModalClose">&#10005;</button>
+      </div>
+      <div style="padding: 16px 18px; display: flex; flex-direction: column; gap: 14px;">
+        <textarea id="labGenTaskInput" class="workshop-textarea" rows="4" placeholder="Describe the task you need help with..."></textarea>
+        <div class="quick-tasks">
+          <button class="chip lab-quick-task" data-task="Summarize a document">Summarize a document</button>
+          <button class="chip lab-quick-task" data-task="Write me an email">Write me an email</button>
+          <button class="chip lab-quick-task" data-task="Translate code between programming languages">Translate code</button>
+        </div>
+        <label class="checkbox-label">
+          <input type="checkbox" id="labThinkingCheck" checked>
+          <span>This prompt will be used with models that have <strong>thinking</strong> enabled</span>
+        </label>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost btn-sm" id="labGenCancelBtn">Cancel</button>
+        <button class="btn btn-primary" id="labGenViewBtn">View Prompt</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- Improvement Lab — Your Prompt Preview Modal                             -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="modal-overlay hidden" id="labPreviewModal">
+    <div class="modal" style="max-width: 600px;">
+      <div class="modal-header">
+        <h2 class="modal-title">Your prompt</h2>
+        <button class="modal-close" id="labPreviewModalClose">&#10005;</button>
+      </div>
+      <div style="padding: 16px 18px; display: flex; flex-direction: column; gap: 14px;">
+        <div class="stream-output lab-preview-output" id="labPreviewOutput"><span class="cursor"></span></div>
+        <div class="lab-preview-vars" id="labPreviewVars">
+          <span class="meta-label">Detected variables</span>
+          <div class="variable-tags" id="labPreviewVarTags"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost btn-sm" id="labPreviewBackBtn">Back</button>
+        <button class="btn btn-primary" id="labPreviewContinueBtn">Continue</button>
       </div>
     </div>
   </div>

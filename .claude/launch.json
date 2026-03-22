@@ -6,6 +6,12 @@
       "runtimeExecutable": "/Users/gerardgrenville/.nvm/versions/node/v22.21.1/bin/node",
       "runtimeArgs": ["/Users/gerardgrenville/promptplus/node_modules/.bin/electron", "."],
       "port": 0
+    },
+    {
+      "name": "renderer-preview",
+      "runtimeExecutable": "/Users/gerardgrenville/.nvm/versions/node/v22.21.1/bin/node",
+      "runtimeArgs": ["/Users/gerardgrenville/promptplus/.claude/serve-renderer.js"],
+      "port": 3456
     }
   ]
 }
