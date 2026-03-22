@@ -1,0 +1,7 @@
+node_modules/
+dist/
+build/icon.png
+*.dmg
+*.zip
+.DS_Store
+*.log

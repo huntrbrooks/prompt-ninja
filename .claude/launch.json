@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "PromptPlus Dev",
+      "runtimeExecutable": "/Users/gerardgrenville/.nvm/versions/node/v22.21.1/bin/node",
+      "runtimeArgs": ["/Users/gerardgrenville/promptplus/node_modules/.bin/electron", "."],
+      "port": 0
+    }
+  ]
+}

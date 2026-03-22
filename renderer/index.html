@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com;">
+  <title>PromptPlus</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div class="app-layout">
+
+    <!-- Title Bar (draggable) -->
+    <header class="titlebar">
+      <h1>PromptPlus</h1>
+    </header>
+
+    <!-- Tab Bar -->
+    <nav class="tab-bar">
+      <button class="tab active" data-tab="workshop">Workshop</button>
+      <button class="tab" data-tab="prompts">Prompts &amp; Systems</button>
+      <button class="tab" data-tab="settings">Settings</button>
+    </nav>
+
+    <!-- Context Bar -->
+    <div class="context-bar" id="contextBar">
+      <div class="context-bar-inner">
+        <span class="context-bar-label">Context:</span>
+        <button class="context-badge context-badge--empty" id="ctxMasterBadge" title="Load a master prompt">
+          <span class="context-badge-icon">&#128100;</span>
+          <span class="context-badge-name" id="ctxMasterName">No master prompt</span>
+        </button>
+        <button class="context-badge context-badge--empty" id="ctxSystemBadge" title="Load a system prompt">
+          <span class="context-badge-icon">&#9881;</span>
+          <span class="context-badge-name" id="ctxSystemName">No system prompt</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ═══ Workshop Tab ═══════════════════════════════════════════════════ -->
+    <main class="content tab-content active" id="tab-workshop">
+
+      <!-- Active Model Badge -->
+      <div class="model-bar">
+        <div class="model-badge" id="modelBadge" title="Click to change model">
+          <span class="model-badge-dot"></span>
+          <span class="model-badge-name" id="modelBadgeName">Loading...</span>
+          <span class="model-badge-provider" id="modelBadgeProvider"></span>
+          <span class="model-badge-arrow">&#8964;</span>
+        </div>
+        <button class="btn-icon-sm" id="refreshModelsBtn" title="Refresh models">&#8635;</button>
+      </div>
+
+      <!-- Mode Toggle -->
+      <div class="mode-toggle">
+        <button class="mode-btn active" data-mode="generate">Generate a Prompt</button>
+        <button class="mode-btn" data-mode="analyze">Analyze a Prompt</button>
+      </div>
+
+      <!-- ── Generate Mode ────────────────────────────────────────── -->
+      <div class="workshop-mode active" id="mode-generate">
+        <div class="card workshop-card">
+          <textarea
+            id="generateInput"
+            class="workshop-textarea"
+            placeholder="Describe what you want the prompt to do...&#10;&#10;Example: I want to create a prompt that reviews pull requests and gives feedback on code quality, security issues, and performance."
+            rows="5"
+          ></textarea>
+          <div class="quick-tasks">
+            <button class="chip" data-task="Summarize a document">Summarize a document</button>
+            <button class="chip" data-task="Write me an email">Write me an email</button>
+            <button class="chip" data-task="Translate code between programming languages">Translate code</button>
+            <button class="chip" data-task="Review and improve my writing">Improve writing</button>
+          </div>
+          <div class="workshop-actions">
+            <div class="workshop-toggles">
+              <label class="checkbox-label">
+                <input type="checkbox" id="thinkingToggle">
+                <span>Optimize for <strong>thinking</strong> models</span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="pullToggle">
+                <span><strong>Pull</strong> prompting (AI interviews you first)</span>
+              </label>
+            </div>
+            <button id="generateBtn" class="btn btn-primary">Generate</button>
+          </div>
+        </div>
+
+        <!-- Streaming / Result area -->
+        <div class="result-area hidden" id="generateResult">
+          <div class="result-header">
+            <span class="section-title">Your prompt</span>
+            <div class="result-header-actions">
+              <button id="stopGenerate" class="btn btn-ghost btn-sm hidden">&#9632; Stop</button>
+              <button id="copyGenerated" class="btn btn-ghost btn-sm">Copy</button>
+              <button id="refineGenerated" class="btn btn-ghost btn-sm">Analyze &#8594;</button>
+              <button id="createSysPrompt" class="btn btn-ghost btn-sm">Save as System Prompt</button>
+            </div>
+          </div>
+          <div class="stream-output" id="generateOutput"><span class="cursor"></span></div>
+          <div class="result-meta hidden" id="generateVariables">
+            <span class="meta-label">Variables</span>
+            <div class="variable-tags" id="variableTags"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Analyze Mode ─────────────────────────────────────────── -->
+      <div class="workshop-mode" id="mode-analyze">
+        <div class="card workshop-card">
+          <textarea
+            id="analyzeInput"
+            class="workshop-textarea"
+            placeholder="Paste your prompt here to get feedback on how to improve it..."
+            rows="7"
+          ></textarea>
+          <div class="workshop-actions">
+            <span class="char-count"><span id="charCount">0</span> chars</span>
+            <button id="analyzeBtn" class="btn btn-primary">Analyze</button>
+          </div>
+        </div>
+
+        <!-- Streaming / Result area -->
+        <div class="result-area hidden" id="analyzeResult">
+          <div class="result-header">
+            <span class="section-title">Analysis</span>
+            <div class="result-header-actions">
+              <button id="stopAnalyze" class="btn btn-ghost btn-sm hidden">&#9632; Stop</button>
+              <button id="copyAnalysis" class="btn btn-ghost btn-sm">Copy</button>
+            </div>
+          </div>
+          <div class="stream-output markdown" id="analyzeOutput"><span class="cursor"></span></div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- ═══ Prompts & Systems Tab ══════════════════════════════════════════ -->
+    <main class="content tab-content" id="tab-prompts">
+
+      <!-- Sub-nav -->
+      <nav class="ps-subnav">
+        <button class="ps-subnav-btn active" data-pstab="master">Master Prompts</button>
+        <button class="ps-subnav-btn" data-pstab="system">System Prompts</button>
+        <button class="ps-subnav-btn" data-pstab="projects">Projects</button>
+      </nav>
+
+      <!-- ── Master Prompts ──────────────────────────────────────────────── -->
+      <div class="ps-tab-content active" id="pstab-master">
+        <div class="ps-toolbar">
+          <p class="ps-description">Master prompts encode your identity, role, audience and constraints — reuse them across every AI session.</p>
+          <button class="btn btn-primary btn-sm" id="newMasterBtn">+ New Master Prompt</button>
+        </div>
+        <div id="masterPromptList" class="ps-library">
+          <div class="ps-empty">No master prompts yet. Create one to get started.</div>
+        </div>
+      </div>
+
+      <!-- ── System Prompts ─────────────────────────────────────────────── -->
+      <div class="ps-tab-content" id="pstab-system">
+        <div class="ps-toolbar">
+          <p class="ps-description">System prompts define how the AI should behave — turn great outputs into repeatable playbooks.</p>
+          <button class="btn btn-primary btn-sm" id="newSystemBtn">+ New System Prompt</button>
+        </div>
+        <div id="systemPromptList" class="ps-library">
+          <div class="ps-empty">No system prompts yet. Create one from any Workshop result.</div>
+        </div>
+      </div>
+
+      <!-- ── Projects ───────────────────────────────────────────────────── -->
+      <div class="ps-tab-content" id="pstab-projects">
+        <div class="ps-toolbar">
+          <p class="ps-description">Projects bundle a master prompt, system prompts and files for a specific initiative.</p>
+          <button class="btn btn-primary btn-sm" id="newProjectBtn">+ New Project</button>
+        </div>
+        <div id="projectList" class="ps-library">
+          <div class="ps-empty">No projects yet.</div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- ═══ Settings Tab ═══════════════════════════════════════════════════ -->
+    <main class="content tab-content" id="tab-settings">
+
+      <section class="section">
+        <div class="section-header"><span class="section-title">OpenRouter</span></div>
+        <div class="card">
+          <div class="form-group">
+            <label for="apiKey">API Key</label>
+            <div class="row">
+              <div class="input-wrapper grow">
+                <input type="password" id="apiKey" placeholder="sk-or-v1-..." spellcheck="false" autocomplete="off">
+              </div>
+              <button id="toggleKey" class="btn btn-secondary btn-icon" title="Show / Hide">&#128065;</button>
+            </div>
+            <p class="hint">Stored locally. Only sent to openrouter.ai.</p>
+          </div>
+          <div class="form-group">
+            <button id="loadApi" class="btn btn-primary full-width">Connect &amp; Load Models</button>
+          </div>
+          <div id="apiStatus" class="api-status hidden"></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-header"><span class="section-title">Hotkey</span></div>
+        <div class="card">
+          <div class="form-group">
+            <label for="hotkey">Global Enhance Shortcut</label>
+            <div class="row">
+              <div class="input-wrapper grow">
+                <input type="text" id="hotkey" readonly placeholder="Click Record &#8594;">
+              </div>
+              <button id="recordHotkey" class="btn btn-secondary">Record</button>
+            </div>
+            <p class="hint">Select text anywhere, press this shortcut to enhance it.</p>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="status-indicator">
+        <span class="dot" id="statusDot"></span>
+        <span id="statusText">Starting...</span>
+      </div>
+      <button id="saveBtn" class="btn btn-primary btn-sm hidden-in-workshop">Save Settings</button>
+    </footer>
+
+    <!-- Toast -->
+    <div id="toast" class="toast" role="alert"></div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- Model Picker Modal                                                      -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="modal-overlay hidden" id="modelModal">
+    <div class="modal">
+
+      <div class="modal-header">
+        <h2 class="modal-title">Choose a model</h2>
+        <button class="modal-close" id="modalClose">&#10005;</button>
+      </div>
+
+      <div class="modal-search-row">
+        <input type="text" id="modelSearch" class="modal-search" placeholder="Search models, providers, capabilities...">
+      </div>
+
+      <div class="modal-filters" id="modelFilters">
+        <button class="filter-chip active" data-filter="all">All</button>
+        <button class="filter-chip" data-filter="featured">Featured</button>
+        <button class="filter-chip" data-filter="free">Free</button>
+        <button class="filter-chip" data-filter="vision">Vision</button>
+        <button class="filter-chip" data-filter="code">Code</button>
+        <button class="filter-chip" data-filter="reasoning">Reasoning</button>
+        <button class="filter-chip" data-filter="long">Long context</button>
+      </div>
+
+      <div class="modal-list-container">
+        <!-- Favorites section -->
+        <div class="model-section hidden" id="favSection">
+          <div class="model-section-label">&#9733; Favorites</div>
+          <div id="favList"></div>
+        </div>
+        <!-- Recent section -->
+        <div class="model-section hidden" id="recentSection">
+          <div class="model-section-label">&#9676; Recent</div>
+          <div id="recentList"></div>
+        </div>
+        <!-- All models section -->
+        <div class="model-section" id="allSection">
+          <div class="model-section-label" id="allSectionLabel">All models</div>
+          <div id="modelList">
+            <div class="model-loading">Loading models...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <div class="modal-selection">
+          <div class="modal-sel-model" id="modalSelModel">No model selected</div>
+          <div class="modal-provider-row">
+            <label class="modal-provider-label">Provider</label>
+            <input type="text" id="modalProvider" class="modal-provider-input" placeholder="auto (OpenRouter default)">
+          </div>
+        </div>
+        <button id="modalSelect" class="btn btn-primary" disabled>Select</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- Master Prompt Wizard Modal                                               -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="modal-overlay hidden" id="masterWizardModal">
+    <div class="modal wizard-modal">
+      <div class="modal-header">
+        <div class="wizard-header-left">
+          <h2 class="modal-title" id="masterWizardTitle">Master Prompt Builder</h2>
+          <div class="wizard-steps" id="masterWizardSteps">
+            <span class="wizard-step active" data-step="0">Interview</span>
+            <span class="wizard-step-sep">›</span>
+            <span class="wizard-step" data-step="1">Review</span>
+            <span class="wizard-step-sep">›</span>
+            <span class="wizard-step" data-step="2">Save</span>
+          </div>
+        </div>
+        <button class="modal-close" id="masterWizardClose">&#10005;</button>
+      </div>
+
+      <!-- Step 0: Interview -->
+      <div class="wizard-step-content active" id="mwStep0">
+        <div class="wizard-intro card">
+          <p>The AI will interview you one question at a time to build your master prompt. Your answers will shape a document you can reuse across every AI session.</p>
+          <div class="form-group" style="margin-top: 10px; margin-bottom: 0;">
+            <label for="masterRoleInput">Your role (to get started)</label>
+            <input type="text" id="masterRoleInput" placeholder="e.g. Founder, Marketing Director, Freelance Designer">
+          </div>
+        </div>
+        <div class="wizard-chat" id="masterChat">
+          <!-- Q&A messages rendered here -->
+        </div>
+        <div class="wizard-input-row" id="masterInputRow" style="display:none;">
+          <textarea id="masterAnswerInput" class="workshop-textarea" rows="2" placeholder="Type your answer..."></textarea>
+          <div class="wizard-input-actions">
+            <button id="masterSendBtn" class="btn btn-primary btn-sm">Send ↵</button>
+            <button id="masterSkipBtn" class="btn btn-ghost btn-sm">Skip</button>
+          </div>
+        </div>
+        <div class="wizard-footer-actions" id="masterStep0Actions">
+          <button id="masterStartInterviewBtn" class="btn btn-primary">Start Interview</button>
+          <button id="masterGenerateFromInterviewBtn" class="btn btn-secondary hidden">Generate Master Prompt</button>
+        </div>
+      </div>
+
+      <!-- Step 1: Review generated document -->
+      <div class="wizard-step-content" id="mwStep1">
+        <div class="wizard-preview-header">
+          <span class="section-title">Generated Master Prompt</span>
+          <button id="masterRegenerateBtn" class="btn btn-ghost btn-sm">↺ Regenerate</button>
+        </div>
+        <textarea id="masterPreviewEdit" class="wizard-preview-textarea" placeholder="Your master prompt will appear here..."></textarea>
+      </div>
+
+      <!-- Step 2: Save -->
+      <div class="wizard-step-content" id="mwStep2">
+        <div class="card">
+          <div class="form-group">
+            <label for="masterNameInput">Name</label>
+            <input type="text" id="masterNameInput" placeholder="e.g. Entrepreneur, Marketing Lead">
+          </div>
+          <div class="form-group">
+            <label for="masterRoleSaveInput">Role / Title</label>
+            <input type="text" id="masterRoleSaveInput" placeholder="e.g. Founder & CEO">
+          </div>
+        </div>
+        <div class="wizard-save-actions">
+          <button id="masterSaveBtn" class="btn btn-primary">Save Master Prompt</button>
+          <button id="masterExportMdBtn" class="btn btn-secondary btn-sm">Export .md</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- System Prompt Wizard Modal                                               -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="modal-overlay hidden" id="systemWizardModal">
+    <div class="modal wizard-modal">
+      <div class="modal-header">
+        <div class="wizard-header-left">
+          <h2 class="modal-title" id="systemWizardTitle">System Prompt Builder</h2>
+          <div class="wizard-steps" id="systemWizardSteps">
+            <span class="wizard-step active" data-step="0">Source</span>
+            <span class="wizard-step-sep">›</span>
+            <span class="wizard-step" data-step="1">Interview</span>
+            <span class="wizard-step-sep">›</span>
+            <span class="wizard-step" data-step="2">Review</span>
+            <span class="wizard-step-sep">›</span>
+            <span class="wizard-step" data-step="3">Save</span>
+          </div>
+        </div>
+        <button class="modal-close" id="systemWizardClose">&#10005;</button>
+      </div>
+
+      <!-- Step 0: Source output -->
+      <div class="wizard-step-content active" id="swStep0">
+        <div class="card">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="sysSourceInput">Paste the output you want to replicate</label>
+            <textarea id="sysSourceInput" class="workshop-textarea" rows="6" placeholder="Paste a great AI output here. The AI will interview you to understand what made it good, then build a system prompt to reproduce it."></textarea>
+          </div>
+        </div>
+        <div class="wizard-footer-actions">
+          <button id="sysStartInterviewBtn" class="btn btn-primary">Start Interview</button>
+        </div>
+      </div>
+
+      <!-- Step 1: Interview -->
+      <div class="wizard-step-content" id="swStep1">
+        <div class="wizard-chat" id="systemChat"></div>
+        <div class="wizard-input-row">
+          <textarea id="sysAnswerInput" class="workshop-textarea" rows="2" placeholder="Type your answer..."></textarea>
+          <div class="wizard-input-actions">
+            <button id="sysSendBtn" class="btn btn-primary btn-sm">Send ↵</button>
+            <button id="sysSkipBtn" class="btn btn-ghost btn-sm">Skip</button>
+          </div>
+        </div>
+        <div class="wizard-footer-actions">
+          <button id="sysGenerateBtn" class="btn btn-secondary hidden">Generate System Prompt</button>
+        </div>
+      </div>
+
+      <!-- Step 2: Review -->
+      <div class="wizard-step-content" id="swStep2">
+        <div class="wizard-preview-header">
+          <span class="section-title">Generated System Prompt</span>
+          <button id="sysRegenerateBtn" class="btn btn-ghost btn-sm">↺ Regenerate</button>
+        </div>
+        <textarea id="sysPreviewEdit" class="wizard-preview-textarea" placeholder="Your system prompt will appear here..."></textarea>
+      </div>
+
+      <!-- Step 3: Save -->
+      <div class="wizard-step-content" id="swStep3">
+        <div class="card">
+          <div class="form-group">
+            <label for="sysNameInput">Name</label>
+            <input type="text" id="sysNameInput" placeholder="e.g. Marketing Copy Writer, Code Reviewer">
+          </div>
+          <div class="form-group">
+            <label for="sysCategoryInput">Category</label>
+            <select id="sysCategoryInput" class="ps-select">
+              <option value="general">General</option>
+              <option value="marketing">Marketing</option>
+              <option value="code">Code</option>
+              <option value="research">Research</option>
+              <option value="writing">Writing</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+        </div>
+        <div class="wizard-save-actions">
+          <button id="sysSaveBtn" class="btn btn-primary">Save System Prompt</button>
+          <button id="sysExportMdBtn" class="btn btn-secondary btn-sm">Export .md</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- New Project Modal                                                        -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="modal-overlay hidden" id="projectModal">
+    <div class="modal" style="max-width: 480px;">
+      <div class="modal-header">
+        <h2 class="modal-title" id="projectModalTitle">New Project</h2>
+        <button class="modal-close" id="projectModalClose">&#10005;</button>
+      </div>
+      <div style="padding: 16px 18px; display: flex; flex-direction: column; gap: 12px;">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label for="projectNameInput">Project name</label>
+          <input type="text" id="projectNameInput" placeholder="e.g. Q3 Product Launch">
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label for="projectDescInput">Description (optional)</label>
+          <input type="text" id="projectDescInput" placeholder="Brief summary of this project">
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label for="projectMasterSelect">Master Prompt (optional)</label>
+          <select id="projectMasterSelect" class="ps-select">
+            <option value="">— None —</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div></div>
+        <button id="projectSaveBtn" class="btn btn-primary">Create Project</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- Context Picker Modal (shared for master + system prompt selection)       -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="modal-overlay hidden" id="ctxPickerModal">
+    <div class="modal" style="max-width: 480px;">
+      <div class="modal-header">
+        <h2 class="modal-title" id="ctxPickerTitle">Select Master Prompt</h2>
+        <button class="modal-close" id="ctxPickerClose">&#10005;</button>
+      </div>
+      <div class="modal-list-container" id="ctxPickerList" style="max-height: 320px; padding: 12px 18px;">
+        <!-- Items rendered by JS -->
+      </div>
+      <div class="modal-footer">
+        <button id="ctxPickerClear" class="btn btn-ghost btn-sm">Clear</button>
+        <button id="ctxPickerSelect" class="btn btn-primary" disabled>Load</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm delete dialog -->
+  <div class="modal-overlay hidden" id="confirmModal">
+    <div class="modal" style="max-width: 380px;">
+      <div class="modal-header">
+        <h2 class="modal-title">Confirm Delete</h2>
+        <button class="modal-close" id="confirmModalClose">&#10005;</button>
+      </div>
+      <div style="padding: 18px; color: var(--text-2); font-size: 13px;" id="confirmModalMsg">Are you sure?</div>
+      <div class="modal-footer">
+        <button id="confirmModalCancel" class="btn btn-ghost btn-sm">Cancel</button>
+        <button id="confirmModalOk" class="btn btn-primary" style="background: var(--error);">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+{
+  "name": "promptplus",
+  "version": "1.0.0",
+  "description": "AI-powered prompt enhancement for macOS — global hotkey to rewrite and restructure prompts via OpenAI",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "icon": "node scripts/generate-icon.js",
+    "sign": "bash scripts/sign-app.sh",
+    "build": "npm run icon && electron-builder --mac && npm run sign",
+    "build:dmg": "npm run icon && electron-builder --mac dmg && npm run sign",
+    "build:zip": "npm run icon && electron-builder --mac zip && npm run sign",
+    "build:dir": "npm run icon && electron-builder --mac dir && npm run sign"
+  },
+  "build": {
+    "appId": "com.promptplus.app",
+    "productName": "PromptPlus",
+    "copyright": "Copyright © 2026",
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "target": [
+        { "target": "dmg", "arch": ["universal"] },
+        { "target": "zip", "arch": ["universal"] }
+      ],
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "darkModeSupport": true,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "NSAppleEventsUsageDescription": "PromptPlus needs to send keystrokes to copy and paste enhanced text in your active application.",
+        "CFBundleName": "PromptPlus"
+      }
+    },
+    "dmg": {
+      "title": "PromptPlus",
+      "iconSize": 80,
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    }
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  }
+}
