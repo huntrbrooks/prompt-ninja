@@ -5,3 +5,4 @@ build/icon.png
 *.zip
 .DS_Store
 *.log
+.vercel

@@ -1,0 +1,12 @@
+node_modules
+dist
+build
+.git
+.claude
+.cursor
+.promptrecorder
+.playwright-cli
+*.dmg
+*.zip
+*.log
+.DS_Store
